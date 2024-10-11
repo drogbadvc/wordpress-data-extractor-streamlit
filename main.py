@@ -63,15 +63,19 @@ def fetch_all_pages(base_url, params, status_text, item_name, session):
     return all_items
 
 
-def fetch_all_published_posts(base_site_url, status_text, session):
+def fetch_all_published_posts(base_site_url, status_text, session, categories_option, tags_option):
     """Fetch all published posts from the WordPress site."""
     base_url = f'{base_site_url}/wp-json/wp/v2/posts'
+    fields = ['link', 'title', 'content', 'featured_media']
+    if categories_option:
+        fields.append('categories')
+    if tags_option:
+        fields.append('tags')
     params = {
         'status': 'publish',
         'per_page': 100,
-        '_fields': 'link,title,content,categories,featured_media',
+        '_fields': ','.join(fields),
         '_embed': 'wp:featuredmedia',  # Include embedded media data
-
     }
     return fetch_all_pages(base_url, params, status_text, 'articles', session)
 
@@ -130,6 +134,10 @@ def main():
     base_site_url = st.text_input('Enter the WordPress site URL (with http:// or https://)',
                                   'https://www.example.com')
 
+    # Add sidebar options
+    categories_option = st.sidebar.checkbox('Retrieve Categories', value=True)
+    tags_option = st.sidebar.checkbox('Retrieve Tags', value=True)
+
     if st.button('Start fetching articles'):
         status_text = st.empty()
         # Validate the input URL
@@ -147,15 +155,21 @@ def main():
         with st.spinner('Processing...'):
             try:
                 # Fetch all published posts
-                posts = fetch_all_published_posts(base_site_url, status_text, session)
+                posts = fetch_all_published_posts(base_site_url, status_text, session, categories_option, tags_option)
                 if not posts:
                     st.warning('No articles found.')
                     return
                 st.success(f'Total articles fetched: {len(posts)}')
 
-                # Fetch all categories
-                category_dict = fetch_all_categories(base_site_url, status_text, session)
-                tag_dict = fetch_all_tags(base_site_url, status_text, session)
+                # Fetch categories and tags if selected
+                if categories_option:
+                    category_dict = fetch_all_categories(base_site_url, status_text, session)
+                else:
+                    category_dict = {}
+                if tags_option:
+                    tag_dict = fetch_all_tags(base_site_url, status_text, session)
+                else:
+                    tag_dict = {}
 
                 # Prepare to collect post data
                 csv_data = []
@@ -170,41 +184,36 @@ def main():
                     url = post.get('link', '')
                     title = post.get('title', {}).get('rendered', '')
                     content = post.get('content', {}).get('rendered', '')
-                    categories = []
-
-                    # Get category names from IDs
-                    category_ids = post.get('categories', [])
-                    if category_ids:
-                        categories = [category_dict.get(cat_id, 'Unknown') for cat_id in category_ids]
-
-                    category_names = ', '.join(categories)
-
-                    # Get tag names from IDs
-                    tag_ids = post.get('tags', [])
-                    tags = [tag_dict.get(tag_id, 'Unknown') for tag_id in tag_ids]
-                    tag_names = ', '.join(tags)
 
                     # Get image URL from embedded media
-                    image_url = ''
-                    if post.get('featured_media'):
-                        media_id = post.get('featured_media')
-                        media_response = requests.get(f"{base_site_url}/wp-json/wp/v2/media/{media_id}", timeout=30)
-                        if media_response.status_code == 200:
-                            media_data = media_response.json()
-                            image_url = media_data.get('source_url', '')
-                        else:
-                            image_url = ''
-                    else:
-                        image_url = ''
+                    image_url = get_image_url(post, base_site_url, session)
 
-                    csv_data.append({
+                    post_data = {
                         'url': url,
                         'title': title,
                         'content': content,
-                        'categories': category_names,
-                        'tags': tag_names,
                         'image_url': image_url
-                    })
+                    }
+
+                    # Handle categories if selected
+                    if categories_option:
+                        categories = []
+                        category_ids = post.get('categories', [])
+                        if category_ids:
+                            categories = [category_dict.get(cat_id, 'Unknown') for cat_id in category_ids]
+                        category_names = ', '.join(categories)
+                        post_data['categories'] = category_names
+
+                    # Handle tags if selected
+                    if tags_option:
+                        tags = []
+                        tag_ids = post.get('tags', [])
+                        if tag_ids:
+                            tags = [tag_dict.get(tag_id, 'Unknown') for tag_id in tag_ids]
+                        tag_names = ', '.join(tags)
+                        post_data['tags'] = tag_names
+
+                    csv_data.append(post_data)
 
                 progress_bar.empty()
                 status_text.text('Processing completed.')
