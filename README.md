@@ -4,6 +4,11 @@
 
 Wordpress data extractor Streamlit is a Streamlit application that connects to any WordPress site's REST API to retrieve and export posts, categories, tags, and featured images. Users can select which data fields to include and export the results to a CSV file.
 
+## Demo
+
+![Demo](demo/demo1.png)
+
+
 ## Features
 
 - Fetch posts from any WordPress site via REST API.
